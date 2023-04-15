@@ -1,0 +1,109 @@
+*Importar base de datos
+
+import delimited "C:\Users\Santiago\Desktop\Proyecto Econometria 2\ECH_2021_sem1_terceros.csv" 
+
+*Generar variable binaria que toma valor 1 si el hogar es propietario de la vivienda
+
+rename h5_cv tenencia_vivienda
+g PROPIETARIO=1 if tenencia_vivienda<=4
+replace PROPIETARIO=0 if PROPIETARIO==.
+
+*Generar variable binaria que toma valor 1 si el hogar se encuentra en Montevideo
+
+g MONTEVIDEO=1 if dpto==1
+replace MONTEVIDEO=0 if MONTEVIDEO==.
+
+*Generar variable binaria (activos) que toma valor 1 si el hogar se cuenta con Depósitos bancarios que generan intereses 
+* o letras/bonos o préstamos a terceros o otra propiedad o local o otros títulos.
+
+rename h167_1 INTERESES_DEPÓSITOS_BANCARIOS
+rename h167_2 LETRAS_BONOS
+rename h167_3 PRÉSTAMOS_TERCEROS
+rename h159 PROPIETARIO_OTRA_VIVIENDA_LOCAL
+rename h167_4 OTROS_TÍTULOS
+g ACTIVOS=1 if INTERESES_DEPÓSITOS_BANCARIOS == 1 | LETRAS_BONOS ==1 | PRÉSTAMOS_TERCEROS ==1 | PROPIETARIO_OTRA_VIVIENDA_LOCAL ==1 | OTROS_TÍTULOS ==1
+replace ACTIVOS=0 if ACTIVOS==.
+
+*Definir la varaible "INGRESO TOTAL DEL HOGAR SIN VALOR LOCATIVO SIN SERVICIO DOMÉSTICO" como INGRESOS_HOGAR
+
+rename ysvl INGRESOS_HOGAR
+
+*Generar los regresores
+
+*edad promedio del hogar
+
+bysort numero: egen edad_promedio_hogar = mean(e27)
+browse numero e27 edad_promedio_hogar
+
+nivel de educación más alto del hogar
+gen max_educ_individuoprima=0 
+replace max_educ_individuoprima =1 if e197_1 == 1 & (e201_1 == 0 | e201_1==2) & (e212_1 == 0 | e212_1==2) & (e215_1 == 0 | e215_1==2) & (e218_1 == 0 | e218_1==2) & (e221_1 == 0 | e221_1==2) & (e224_1 == 0 | e224_1==2)
+replace max_educ_individuoprima =2 if e197_1 == 1 & (e201_1 == 1 | e212_1 == 1) & (e215_1 == 0 | e215_1==2) & (e218_1 == 0 | e218_1==2) & (e221_1 == 0 | e221_1 ==2) & (e224_1 == 0 | e224_1 == 2)
+replace max_educ_individuoprima =3 if e197_1 == 1 & (e201_1 == 1 | e212_1 == 1) & (e215_1 == 1 | e218_1 == 1 | e221_1 == 1 | e224_1 == 1)
+
+bysort numero: egen max_nivel_educativo_hogarprima = max(max_educ_individuoprima)
+browse numero max_educ_individuoprima max_nivel_educativo_hogarprima
+
+*nivel educativo del jefe de hogar 
+gen nivel_educativo_jefedehogar=0
+replace nivel_educativo_jefedehogar=max_educ_individuoprima if e30==1
+bysort numero: egen nivel_educativo_hogar_segun_jefe = max(nivel_educativo_jefedehogar) 
+browse numero max_educ_individuoprima max_nivel_educativo_hogarprima nivel_educativo_hogar_segun_jefe
+
+*edad del jefe de hogar
+gen edad_jefe=0
+replace edad_jefe=e27 if e30==1
+bysort numero: egen edad_jefedehogar = max(edad_jefe)
+browse numero e27 edad_promedio_hogar edad_jefedehogar 
+
+*sexo del jefe de hogar
+gen sexo_jefe=0
+replace sexo_jefe=e26 if e30==1
+bysort numero: egen sexo_jefedehogar = max(sexo_jefe)
+browse numero e30 e26 sexo_jefedehogar sexo_jefe 
+
+*test de hausman*
+
+*Modelo MCO
+
+reg PROPIETARIO INGRESOS_HOGAR PROPIETARIO_OTRA_VIVIENDA_LOCAL INTERESES_DEPÓSITOS_BANCARIOS edad_promedio_hogar MONTEVIDEO
+est store MCO
+
+*Modelo IV
+
+ivregress 2sls PROPIETARIO (INGRESOS_HOGAR  = max_nivel_educativo_hogar sexo_jefedehogar) PROPIETARIO_OTRA_VIVIENDA_LOCAL INTERESES_DEPÓSITOS_BANCARIOS edad_promedio_hogar MONTEVIDEO
+est store IV
+
+*contraste de Hausman 
+
+hausman IV MCO
+
+*Estimación MGM instrumentando el ingreso con sexo jefe de hogar  y el nivel de estudios del jefe de  hogar
+
+ivregress gmm PROPIETARIO (INGRESOS_HOGAR  = nivel_educativo_hogar_segun_jefe sexo_jefedehogar) PROPIETARIO_OTRA_VIVIENDA_LOCAL INTERESES_DEPÓSITOS_BANCARIOS edad_promedio_hogar MONTEVIDEO
+
+
+*Probit intrumentado
+
+*MCO ingreso
+
+reg INGRESOS_HOGAR   nivel_educativo_hogar_segun_jefe sexo_jefedehogar PROPIETARIO_OTRA_VIVIENDA_LOCAL INTERESES_DEPÓSITOS_BANCARIOS edad_promedio_hogar MONTEVIDEO
+est store ING
+
+probit PROPIETARIO ING PROPIETARIO_OTRA_VIVIENDA_LOCAL INTERESES_DEPÓSITOS_BANCARIOS edad_promedio_hogar MONTEVIDEO
+
+*Efectos parciales
+
+mfx compute, at(PROPIETARIO_OTRA_VIVIENDA_LOCAL =0 INTERESES_DEPÓSITOS_BANCARIOS =0  MONTEVIDEO =1)
+
+mfx compute, at(PROPIETARIO_OTRA_VIVIENDA_LOCAL =0 INTERESES_DEPÓSITOS_BANCARIOS =0  MONTEVIDEO =1 edad_promedio_hogar = 20)
+
+mfx compute, at(PROPIETARIO_OTRA_VIVIENDA_LOCAL =0 INTERESES_DEPÓSITOS_BANCARIOS =0  MONTEVIDEO =1 edad_promedio_hogar = 60)
+
+mfx compute, at(PROPIETARIO_OTRA_VIVIENDA_LOCAL =0 INTERESES_DEPÓSITOS_BANCARIOS =0  MONTEVIDEO =1 ING = 60000)
+
+mfx compute, at(PROPIETARIO_OTRA_VIVIENDA_LOCAL =0 INTERESES_DEPÓSITOS_BANCARIOS =0  MONTEVIDEO =1 ING = 15000)
+
+**ivprobit era otra opción, pero no permitia ver los efectos parciales, sugerimos chequear que los betas estimados son iguales a los efectos parciales y eso no tiene sentido.
+ivprobit PROPIETARIO (INGRESOS_HOGAR  = nivel_educativo_hogar_segun_jefe sexo_jefedehogar) PROPIETARIO_OTRA_VIVIENDA_LOCAL INTERESES_DEPÓSITOS_BANCARIOS edad_promedio_hogar MONTEVIDEO, twostep
+mfx compute
